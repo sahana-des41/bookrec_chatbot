@@ -1,14 +1,21 @@
 export interface Book {
   id: string;
   title: string;
+  subtitle?: string;
   author: string;
-  genre: string;
+  category: string;
   description: string;
   coverImage: string;
+  rating?: number;
+  ratingsCount?: number;
+  pageCount?: number;
+  publishedDate?: string;
+  previewLink?: string;
+  infoLink?: string;
   moods: string[];
-  romanceLevel: 'low' | 'medium' | 'high';
-  length: 'short' | 'medium' | 'long';
-  format: 'standalone' | 'series';
+  romanceLevel?: 'low' | 'medium' | 'high';
+  length?: 'short' | 'medium' | 'long';
+  format?: 'standalone' | 'series';
 }
 
 export type Role = 'user' | 'bot';
@@ -21,10 +28,8 @@ export interface Message {
 }
 
 export interface UserPreferences {
-  genre: string | null;
+  category: string | null;
   mood: string | null;
-  romanceLevel: string | null;
-  length: string | null;
-  format: string | null;
   keywords: string[];
 }
+
