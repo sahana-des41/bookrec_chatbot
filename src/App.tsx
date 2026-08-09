@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, BookOpen, Star, Sparkles, Database } from 'lucide-react';
+import { Send, BookOpen, Star, Sparkles, Database, Cpu, AlertTriangle } from 'lucide-react';
 import type { Message, Book } from './types';
-import { app, getInitialState } from './agent/graph';
+import { processChatStep, getInitialState } from './agent/graph';
 
 // Typewriter effect component for natural reading flow
 const DynamicText = ({ text, speed = 15 }: { text: string; speed?: number }) => {
@@ -14,7 +14,8 @@ const DynamicText = ({ text, speed = 15 }: { text: string; speed?: number }) => 
 
     const interval = setInterval(() => {
       if (indexRef.current < text.length) {
-        setDisplayedText(prev => prev + text.charAt(indexRef.current));
+        const nextChar = text.charAt(indexRef.current);
+        setDisplayedText(prev => prev + nextChar);
         indexRef.current += 1;
       } else {
         clearInterval(interval);
@@ -66,7 +67,7 @@ function App() {
     {
       id: 'welcome',
       role: 'bot',
-      content: "Hiiya!! I am bryaxis the keeper of books. Name me your interests and I can handpick a title for you"
+      content: "Hiiya!! I am bryaxis the keeper of books, powered by Google Gemini. Name me your interests or mood, and I will handpick recommendations for you!"
     }
   ]);
   const [inputValue, setInputValue] = useState('');
@@ -96,26 +97,25 @@ function App() {
     setInputValue('');
     setIsTyping(true);
 
-    const inputs = {
-      messages: [...graphState.messages, newUserMessage],
-      preferences: graphState.preferences,
-      recommendationCount: graphState.recommendationCount
-    };
-
     try {
-      const result = await app.invoke(inputs);
-      setGraphState(result as any);
-
-      const typedResult = result as { messages: Message[] };
-      const botMessage = typedResult.messages[typedResult.messages.length - 1];
-
-      setTimeout(() => {
-        setMessages(prev => [...prev, botMessage]);
-        setIsTyping(false);
-      }, 400);
-
-    } catch (error) {
-      console.error("Error invoking graph:", error);
+      const { newState, botMessage } = await processChatStep(graphState, newUserMessage);
+      setGraphState(newState);
+      setMessages(prev => [...prev, botMessage]);
+    } catch (error: any) {
+      console.error("Error processing chat step:", error);
+      
+      let errorMsg = "Sorry, I'm having trouble connecting to the recommendation service. Please try again.";
+      if (error?.message && error.message.includes('429')) {
+        errorMsg = "Bryaxis is receiving too many requests right now! Please wait a moment and try again.";
+      }
+      
+      // Add a user-friendly bot message fallback in case of errors
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'bot',
+        content: `[System Error] ${errorMsg}`
+      }]);
+    } finally {
       setIsTyping(false);
     }
   };
@@ -132,8 +132,11 @@ function App() {
     { label: "🕵️ Thriller", text: "Give me a top-rated mystery thriller" },
     { label: "💖 Cozy Romance", text: "I want a cozy, witty romance book" },
     { label: "💡 Self-Help", text: "Recommend a high-impact self-help book" },
-    { label: "🎲 Surprise Me", text: "Surprise me with a great book from Kaggle" }
+    { label: "🎲 Surprise Me", text: "Surprise me with a great book recommendation" }
   ];
+
+  const hasApiKey = Boolean(import.meta.env.VITE_GEMINI_API_KEY) && 
+                    !import.meta.env.VITE_GEMINI_API_KEY.includes('your_google_ai_studio_api_key_here');
 
   return (
     <div className="app-container">
@@ -151,6 +154,9 @@ function App() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className="dataset-badge" style={{ background: hasApiKey ? 'rgba(74, 222, 128, 0.15)' : 'rgba(239, 68, 68, 0.15)', color: hasApiKey ? '#4ade80' : '#f87171', border: `1px solid ${hasApiKey ? '#4ade8040' : '#f8717140'}` }}>
+              <Cpu size={11} /> {hasApiKey ? 'Gemini 2.0 Active' : 'Gemini Offline (No Key)'}
+            </div>
             <div className="dataset-badge">
               <Database size={11} /> Kaggle 15K
             </div>
@@ -161,6 +167,14 @@ function App() {
             </div>
           </div>
         </div>
+
+        {/* Error notification banner if API Key is missing */}
+        {!hasApiKey && (
+          <div style={{ background: '#fef3c7', borderBottom: '2px solid #fbbf24', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '8px', color: '#92400e', fontFamily: 'var(--pixel-font)', fontSize: '18px' }}>
+            <AlertTriangle size={18} />
+            <span>Warning: VITE_GEMINI_API_KEY environment variable is not configured. The chatbot is operating in offline/fallback mode.</span>
+          </div>
+        )}
 
         {/* Messages Area */}
         <div className="chat-messages">
@@ -175,7 +189,7 @@ function App() {
               <div className={msg.role === 'bot' ? 'bot-container' : ''}>
                 <div className={`message ${msg.role}`}>
                   {msg.role === 'bot' ? (
-                    <DynamicText text={msg.content} speed={20} />
+                    <DynamicText text={msg.content} speed={15} />
                   ) : (
                     msg.content
                   )}

@@ -28,8 +28,20 @@ export interface Message {
 }
 
 export interface UserPreferences {
-  category: string | null;
-  mood: string | null;
-  keywords: string[];
+  category: string | null; // Keep compatibility
+  mood: string | null;     // Keep compatibility
+  keywords: string[];      // Keep compatibility
+  
+  // Extended preferences for true LLM reasoning
+  genres?: string[];
+  themes?: string[];
+  tone?: string[];
+  characterPreferences?: string[];
+  preferredLength?: 'short' | 'medium' | 'long';
+  dislikedGenres?: string[];
+  dislikedThemes?: string[];
+  favoriteAuthors?: string[];
+  favoriteBooks?: string[];
+  preferredRating?: number;
+  otherPreferences?: string[];
 }
-
