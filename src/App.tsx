@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, BookOpen, Star, Sparkles, Database, Cpu, AlertTriangle } from 'lucide-react';
+import { Send, BookOpen, Star, Sparkles, Database, Cpu, AlertTriangle, GitBranch } from 'lucide-react';
 import type { Message, Book } from './types';
-import { processChatStep, getInitialState } from './agent/graph';
+import { runGraph, getInitialGraphState, type BookRecGraphState } from './agent/graph';
 
-// Typewriter effect component for natural reading flow
+// ─── Typewriter Effect ─────────────────────────────────────────────────────────
 const DynamicText = ({ text, speed = 15 }: { text: string; speed?: number }) => {
   const [displayedText, setDisplayedText] = useState('');
   const indexRef = useRef(0);
@@ -14,8 +14,7 @@ const DynamicText = ({ text, speed = 15 }: { text: string; speed?: number }) => 
 
     const interval = setInterval(() => {
       if (indexRef.current < text.length) {
-        const nextChar = text.charAt(indexRef.current);
-        setDisplayedText(prev => prev + nextChar);
+        setDisplayedText(prev => prev + text.charAt(indexRef.current));
         indexRef.current += 1;
       } else {
         clearInterval(interval);
@@ -28,7 +27,7 @@ const DynamicText = ({ text, speed = 15 }: { text: string; speed?: number }) => 
   return <span>{displayedText}</span>;
 };
 
-// Book Card Component
+// ─── Book Card ─────────────────────────────────────────────────────────────────
 const BookCard = ({ book }: { book: Book }) => {
   const hasReason = book.description.includes('*Why it matches:');
   const mainDesc = hasReason ? book.description.split('\n\n*Why it matches:')[0] : book.description;
@@ -49,9 +48,7 @@ const BookCard = ({ book }: { book: Book }) => {
         <span className="book-category">{book.category}</span>
         <h4 className="book-title">{book.title}</h4>
         <p className="book-author">by {book.author}</p>
-
         <p className="book-desc">{mainDesc}</p>
-
         {reasonText && (
           <div className="book-reason">
             💡 {reasonText}
@@ -62,19 +59,21 @@ const BookCard = ({ book }: { book: Book }) => {
   );
 };
 
+// ─── App ───────────────────────────────────────────────────────────────────────
 function App() {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
       role: 'bot',
-      content: "Hiiya!! I am bryaxis the keeper of books, powered by Google Gemini. Name me your interests or mood, and I will handpick recommendations for you!"
-    }
+      content: "Hiiya!! I am bryaxis the keeper of books, powered by Google Gemini & LangGraph. Name me your interests or mood, and I will handpick recommendations for you!",
+    },
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const [graphState, setGraphState] = useState(getInitialState());
+  // LangGraph state persisted in React state
+  const [graphState, setGraphState] = useState<BookRecGraphState>(getInitialGraphState());
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -90,7 +89,7 @@ function App() {
     const newUserMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: text
+      content: text,
     };
 
     setMessages(prev => [...prev, newUserMessage]);
@@ -98,23 +97,22 @@ function App() {
     setIsTyping(true);
 
     try {
-      const { newState, botMessage } = await processChatStep(graphState, newUserMessage);
+      // Invoke LangGraph — passes accumulated state + new message through the graph
+      const { newState, botMessage } = await runGraph(graphState, newUserMessage);
       setGraphState(newState);
       setMessages(prev => [...prev, botMessage]);
     } catch (error: any) {
-      console.error("Error processing chat step:", error);
-      
-      let errorMsg = "Sorry, I'm having trouble connecting to the recommendation service. Please try again.";
-      if (error?.message && error.message.includes('429')) {
-        errorMsg = "Bryaxis is receiving too many requests right now! Please wait a moment and try again.";
+      console.error('LangGraph execution error:', error);
+
+      let errorMsg = "Sorry, I'm having trouble right now. Please try again in a moment.";
+      if (error?.message?.includes('429')) {
+        errorMsg = "Bryaxis is receiving too many requests! Please wait a moment and try again.";
       }
-      
-      // Add a user-friendly bot message fallback in case of errors
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        role: 'bot',
-        content: `[System Error] ${errorMsg}`
-      }]);
+
+      setMessages(prev => [
+        ...prev,
+        { id: Date.now().toString(), role: 'bot', content: `⚠️ ${errorMsg}` },
+      ]);
     } finally {
       setIsTyping(false);
     }
@@ -132,34 +130,57 @@ function App() {
     { label: "🕵️ Thriller", text: "Give me a top-rated mystery thriller" },
     { label: "💖 Cozy Romance", text: "I want a cozy, witty romance book" },
     { label: "💡 Self-Help", text: "Recommend a high-impact self-help book" },
-    { label: "🎲 Surprise Me", text: "Surprise me with a great book recommendation" }
+    { label: "🎲 Surprise Me", text: "Surprise me with a great book recommendation" },
   ];
 
-  const hasApiKey = Boolean(import.meta.env.VITE_GEMINI_API_KEY) && 
-                    !import.meta.env.VITE_GEMINI_API_KEY.includes('your_google_ai_studio_api_key_here');
+  const hasApiKey =
+    Boolean(import.meta.env.VITE_GEMINI_API_KEY) &&
+    !import.meta.env.VITE_GEMINI_API_KEY.includes('your_google_ai_studio_api_key_here');
 
   return (
     <div className="app-container">
       <div className="chat-container">
 
-        {/* Windows 93 / Retro Pixel Header */}
+        {/* Retro header */}
         <div className="chat-header">
           <div className="header-left">
             <div className="header-icon">
               <BookOpen size={16} />
             </div>
             <div>
-              <h1 className="chat-title">bryaxis’s home</h1>
+              <h1 className="chat-title">bryaxis's home</h1>
             </div>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div className="dataset-badge" style={{ background: hasApiKey ? 'rgba(74, 222, 128, 0.15)' : 'rgba(239, 68, 68, 0.15)', color: hasApiKey ? '#4ade80' : '#f87171', border: `1px solid ${hasApiKey ? '#4ade8040' : '#f8717140'}` }}>
-              <Cpu size={11} /> {hasApiKey ? 'Gemini 2.0 Active' : 'Gemini Offline (No Key)'}
+            {/* Gemini status */}
+            <div
+              className="dataset-badge"
+              style={{
+                background: hasApiKey ? 'rgba(74, 222, 128, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                color: hasApiKey ? '#4ade80' : '#f87171',
+                border: `1px solid ${hasApiKey ? '#4ade8040' : '#f8717140'}`,
+              }}
+            >
+              <Cpu size={11} /> {hasApiKey ? 'Gemini 2.5 Active' : 'Gemini Offline'}
             </div>
+
+            {/* LangGraph badge */}
+            <div
+              className="dataset-badge"
+              style={{
+                background: 'rgba(139, 92, 246, 0.15)',
+                color: '#a78bfa',
+                border: '1px solid rgba(139, 92, 246, 0.25)',
+              }}
+            >
+              <GitBranch size={11} /> LangGraph
+            </div>
+
             <div className="dataset-badge">
               <Database size={11} /> Kaggle 15K
             </div>
+
             <div className="window-controls">
               <div className="win-btn">_</div>
               <div className="win-btn">□</div>
@@ -168,17 +189,31 @@ function App() {
           </div>
         </div>
 
-        {/* Error notification banner if API Key is missing */}
+        {/* API key missing warning */}
         {!hasApiKey && (
-          <div style={{ background: '#fef3c7', borderBottom: '2px solid #fbbf24', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '8px', color: '#92400e', fontFamily: 'var(--pixel-font)', fontSize: '18px' }}>
+          <div
+            style={{
+              background: '#fef3c7',
+              borderBottom: '2px solid #fbbf24',
+              padding: '8px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              color: '#92400e',
+              fontFamily: 'var(--pixel-font)',
+              fontSize: '18px',
+            }}
+          >
             <AlertTriangle size={18} />
-            <span>Warning: VITE_GEMINI_API_KEY environment variable is not configured. The chatbot is operating in offline/fallback mode.</span>
+            <span>
+              Warning: VITE_GEMINI_API_KEY is not set. Bryaxis is running in offline/fallback mode.
+            </span>
           </div>
         )}
 
-        {/* Messages Area */}
+        {/* Messages */}
         <div className="chat-messages">
-          {messages.map((msg) => (
+          {messages.map(msg => (
             <div key={msg.id} className={`message-wrapper ${msg.role}`}>
               {msg.role === 'bot' && (
                 <div className="message-avatar bot">
@@ -195,7 +230,6 @@ function App() {
                   )}
                 </div>
 
-                {/* Book Recommendations */}
                 {msg.recommendations && (
                   <div className="recommendations">
                     {msg.recommendations.map(book => (
@@ -220,9 +254,9 @@ function App() {
               </div>
               <div className="message bot">
                 <div className="typing-indicator">
-                  <div className="typing-dot"></div>
-                  <div className="typing-dot"></div>
-                  <div className="typing-dot"></div>
+                  <div className="typing-dot" />
+                  <div className="typing-dot" />
+                  <div className="typing-dot" />
                 </div>
               </div>
             </div>
@@ -230,7 +264,7 @@ function App() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input Area */}
+        {/* Input */}
         <div className="chat-input-container">
           <div className="suggested-prompts">
             {suggestedPrompts.map(prompt => (
@@ -250,7 +284,7 @@ function App() {
               className="chat-input"
               placeholder="Ask for a book by genre, mood, topic, or author..."
               value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
+              onChange={e => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
               disabled={isTyping}
             />
